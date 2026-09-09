@@ -185,6 +185,7 @@ export class ImapClient {
   /**
    * 发送命令并等待 tagged 响应。
    * 返回所有响应行（含 untagged）。
+   * 带 30 秒超时，避免无限挂起。
    */
   async _command(cmd) {
     if (!this.socket || this.socket.destroyed) {
@@ -194,10 +195,15 @@ export class ImapClient {
     const fullCmd = `${tag} ${cmd}\r\n`;
     this.socket.write(fullCmd, 'binary');
 
+    const COMMAND_TIMEOUT = 30000; // 30秒超时
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`IMAP command timeout after ${COMMAND_TIMEOUT}ms: ${cmd.slice(0, 80)}`)), COMMAND_TIMEOUT)
+    );
+
     // 收集所有响应行直到匹配该 tag 的结束行
     const allLines = [];
     while (true) {
-      const lines = await this._waitResponse();
+      const lines = await Promise.race([this._waitResponse(), timeoutPromise]);
       allLines.push(...lines);
       // 检查是否有该 tag 的结束
       const tagRegex = new RegExp(`^${tag}\\s+(OK|NO|BAD|BYE)`, 'i');
@@ -273,14 +279,22 @@ export class ImapClient {
   /**
    * 两阶段读取第一阶段：FETCH BODY.PEEK[HEADER.FIELDS (...)]
    * 返回 [{uid, from, date, subject, messageId, authResults, rawHeaders}]
+   * 自动分批拉取，每批 BATCH_SIZE 封，避免一次性请求过大导致超时
    */
   async fetchHeaders(uids) {
     if (uids.length === 0) return [];
-    const uidSet = this._uidSet(uids);
-    const lines = await this._command(
-      `UID FETCH ${uidSet} (UID BODY.PEEK[HEADER.FIELDS (FROM DATE SUBJECT MESSAGE-ID AUTHENTICATION-RESULTS RECEIVED-SPF)])`
-    );
-    return this._parseFetchHeaders(lines);
+    const BATCH_SIZE = 100;
+    const allResults = [];
+    for (let i = 0; i < uids.length; i += BATCH_SIZE) {
+      const batch = uids.slice(i, i + BATCH_SIZE);
+      const uidSet = this._uidSet(batch);
+      const lines = await this._command(
+        `UID FETCH ${uidSet} (UID BODY.PEEK[HEADER.FIELDS (FROM DATE SUBJECT MESSAGE-ID AUTHENTICATION-RESULTS RECEIVED-SPF)])`
+      );
+      const batchResults = this._parseFetchHeaders(lines);
+      allResults.push(...batchResults);
+    }
+    return allResults;
   }
 
   /**
