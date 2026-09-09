@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "description": "分类规则配置（当前分类器内置规则，此文件可用于未来覆盖扩展）",
+  "subject_keywords": [
+    "评测", "評測", "レビュー", "review", "code", "key",
+    "申请", "申請", "公開片", "鉴赏家", "鑑賞家", "UP主",
+    "steam", "switch", "NS2", "PS5", "Xbox",
+    "embargo", "NDA", "deadline", "上市", "release"
+  ],
+  "body_keywords": [
+    "评测码", "評測碼", "steam key", "review code",
+    "Nintendo Switch", "PS5", "Xbox",
+    "申请截止", "申請截止", "回复", "回覆",
+    "解禁", "embargo", "NDA", "上市", "発売", "release"
+  ],
+  "code_keywords": [
+    "steam key", "switch code", "ps code", "xbox code",
+    "review code", "activation code", "评测码", "評測碼",
+    "download code"
+  ],
+  "newsletter_keywords": [
+    "newsletter", "unsubscribe", "退订", "退訂", "订阅", "訂閱",
+    "促销", "促銷", "discount", "sale", "限时", "限時",
+    "新闻稿", "新聞稿", "press release"
+  ],
+  "priority_overrides": {}
+}

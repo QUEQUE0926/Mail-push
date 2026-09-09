@@ -1,0 +1,46 @@
+name: mail-signal
+
+on:
+  repository_dispatch:
+    types: [mail-push]
+  workflow_dispatch:
+    inputs:
+      test_payload:
+        description: '测试用 JSON payload（可选）'
+        required: false
+        type: string
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 防呆：workflow_dispatch 在 main 上必须拒绝
+      # 只有 repository_dispatch 可以在 main 上运行
+      - name: Guard test entry on main
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        run: |
+          echo "Refusing to run test workflow on main."
+          exit 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Push
+        env:
+          MAIL_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+          TEST_PAYLOAD: ${{ github.event.inputs.test_payload }}
+          GITHUB_REF: ${{ github.ref }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          WXPUSHER_APP_TOKEN: ${{ secrets.WXPUSHER_APP_TOKEN }}
+          WXPUSHER_UIDS: ${{ secrets.WXPUSHER_UIDS }}
+          BARK_SERVER: ${{ secrets.BARK_SERVER }}
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          PUSH_TEST: ${{ github.ref != 'refs/heads/main' && '1' || '0' }}
+          APP_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
+        run: node cloud/push.mjs

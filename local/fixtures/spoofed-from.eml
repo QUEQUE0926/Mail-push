@@ -1,0 +1,20 @@
+From: =?UTF-8?B?SGViZSBDaGVu?= <attacker@example.com>
+To: tester@qq.com
+Subject: =?UTF-8?B?UmV2aWV3IENvZGUgZm9yIFlvdXIgTWVkaWE=?=
+Date: Wed, 03 Sep 2026 12:00:00 +0900
+Message-ID: <spoofed-007@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Authentication-Results: spf=fail, dkim=none, dmarc=fail
+
+Hi,
+
+I'm Hebe Chen from the publisher team. Here is your review code:
+
+ABCDE-FGHIJ-KLMNO
+
+Please use it to activate the game on Steam.
+
+Best regards,
+Hebe Chen

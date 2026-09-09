@@ -1,0 +1,21 @@
+From: CAPCOM Press <press@capcom.com>
+To: tester@qq.com
+Subject: =?UTF-8?B?Q2FwY29tIFJldmlldyBBcHBsaWNhdGlvbiBOb3RpY2U=?=
+Date: Fri, 05 Sep 2026 16:00:00 +0900
+Message-ID: <malformed-010@capcom.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=ISO-2022-JP
+Content-Transfer-Encoding: quoted-printable
+Authentication-Results: spf=pass, dkim=pass, dmarc=pass
+
+<html><head><title>Review Notice</title></head><body>
+<div><p>Hello <b>Media Partner</b>,</p>
+<p>Your review application has been received.
+<br><br>
+<table><tr><td>Game</td><td><b>Monster Hunter Wilds</b></td></tr>
+<tr><td>Platform</td><td>PS5 / Xbox / Steam</td></tr>
+</table>
+<p>We will notify you once your application is approved.</p>
+<p>Best regards,<br>CAPCOM Press Team</p>
+</div>
+</body></html>

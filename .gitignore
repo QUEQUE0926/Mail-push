@@ -1,0 +1,13 @@
+# 环境变量（含密钥）
+.env
+.env.*
+
+# 运行时状态文件（不提交，state/ 目录本身通过 .gitkeep 跟踪）
+state/*.json
+state/*.lock
+
+# 日志
+*.log
+
+# Node
+node_modules/

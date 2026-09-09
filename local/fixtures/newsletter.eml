@@ -1,0 +1,23 @@
+From: SEGA Newsletter <newsletter@sega.com>
+To: tester@qq.com
+Subject: =?UTF-8?B?U0VHQSDmr4/mnIjpgJrorq8gLSBTZXB0ZW1iZXIgMjAyNg==?=
+Date: Mon, 08 Sep 2026 08:00:00 +0900
+Message-ID: <newsletter-005@sega.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Authentication-Results: spf=pass, dkim=pass, dmarc=pass
+
+<html>
+<body>
+<h2>SEGA 每月通讯 - 2026年9月</h2>
+<p>本月精选游戏促销，限时折扣！</p>
+<ul>
+<li>如龙系列 - 50% OFF</li>
+<li>索尼克系列 - 30% OFF</li>
+</ul>
+<p>点击查看全部促销商品。</p>
+<p>如果您不想再收到此邮件，请<a href="https://example.com/unsubscribe">退订</a>。</p>
+<p>此邮件为新闻稿/促销通讯。</p>
+</body>
+</html>

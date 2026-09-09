@@ -1,0 +1,11 @@
+{
+  "name": "qq-mail-push",
+  "version": "1.0.0",
+  "description": "QQ邮箱重要合作邮件Push系统",
+  "type": "module",
+  "scripts": {
+    "watch": "node local/mail-watcher.mjs",
+    "test": "node local/run-tests.mjs"
+  },
+  "license": "MIT"
+}

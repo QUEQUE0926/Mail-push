@@ -1,0 +1,40 @@
+name: manual-smoke-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke_test:
+        description: '生产 smoke test（强制带【测试】标记）'
+        required: true
+        type: boolean
+        default: true
+      test_payload:
+        description: '测试 payload JSON'
+        required: false
+        type: string
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Smoke Test Push
+        env:
+          MAIL_PAYLOAD: ${{ github.event.inputs.test_payload }}
+          TEST_PAYLOAD: ${{ github.event.inputs.test_payload }}
+          GITHUB_REF: ${{ github.ref }}
+          PUSH_TEST: '1'
+          APP_ENV: 'development'
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          WXPUSHER_APP_TOKEN: ${{ secrets.WXPUSHER_APP_TOKEN }}
+          WXPUSHER_UIDS: ${{ secrets.WXPUSHER_UIDS }}
+          BARK_SERVER: ${{ secrets.BARK_SERVER }}
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: node cloud/push.mjs

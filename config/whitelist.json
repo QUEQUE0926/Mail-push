@@ -1,0 +1,20 @@
+{
+  "emails": [
+    "pr@koeitecmo.com",
+    "press@nintendo.com",
+    "media@ubisoft.com",
+    "press@capcom.com",
+    "pr@sega.com",
+    "press@bandainamco.com",
+    "pr@square-enix.com"
+  ],
+  "domains": [
+    "sega.com",
+    "ubisoft.com",
+    "nintendo.com",
+    "koeitecmo.com",
+    "capcom.com",
+    "bandainamco.com",
+    "square-enix.com"
+  ]
+}
