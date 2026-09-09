@@ -201,10 +201,9 @@ export function buildPayload(classification, mail, options = {}) {
   }
   for (const p of codeDetection.codePlatforms) platforms.add(p);
 
+  // 注意：GitHub client_payload 最多 10 个属性，不要超过
+  // event_type/source/payload_version 不需要放在 client_payload 里
   const payload = {
-    event_type: 'mail-push',
-    source: 'qq-mail',
-    payload_version: 1,
     priority,
     mail_type: type,
     title: TYPE_TITLES[type] || '邮件通知',

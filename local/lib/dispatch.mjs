@@ -9,6 +9,8 @@
  *   - 请求体：{"event_type":"mail-push","client_payload": payload}
  */
 
+import https from 'node:https';
+
 const RETRY_DELAYS = [2000, 5000, 15000]; // 2s, 5s, 15s
 const GITHUB_API_HOST = 'api.github.com';
 
@@ -78,7 +80,6 @@ export async function sendDispatch(payload, config) {
  */
 async function _doRequest(url, token, body) {
   return new Promise((resolve, reject) => {
-    const https = require('node:https');
     const urlObj = new URL(url);
 
     // 安全检查：URL 必须精确匹配 api.github.com
