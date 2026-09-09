@@ -93,7 +93,7 @@ export class ImapClient {
     this.host = config.host || 'imap.qq.com';
     this.port = config.port || 993;
     this.user = config.user;
-    this.password = config.password; // QQ 邮箱授权码
+    this.password = config.password || config.authToken; // QQ 邮箱授权码（支持 password 和 authToken 两种参数名）
     this.socket = null;
     this.tagCounter = 0;
     this.parser = new ImapResponseParser();
@@ -418,6 +418,85 @@ export class ImapClient {
     if (uids.length === 1) return String(uids[0]);
     // 简单起见用逗号分隔（QQ IMAP 支持）
     return uids.join(',');
+  }
+
+  /**
+   * IMAP IDLE 模式：等待服务器推送新邮件通知。
+   * 发送 IDLE → 等待 + idling → 等待 * N EXISTS → 发送 DONE → 等待 tagged OK
+   * 返回新邮件总数（EXISTS 后面的数字）。
+   *
+   * 注意：QQ 邮箱的 IDLE 可能有超时（通常 30 分钟），调用方应处理超时重连。
+   */
+  async idle(timeoutMs = 29 * 60 * 1000) {
+    if (!this.socket || this.socket.destroyed) {
+      throw new Error('IMAP socket not connected');
+    }
+    const tag = this._nextTag();
+    this.socket.write(`${tag} IDLE\r\n`, 'binary');
+
+    // 超时保护：QQ IMAP IDLE 约 30 分钟超时，提前 1 分钟退出
+    let timeoutHandle = null;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error('IDLE timeout')), timeoutMs);
+    });
+
+    try {
+      // 1. 等待 + idling  continuation
+      let gotIdling = false;
+      while (!gotIdling) {
+        const lines = await Promise.race([this._waitResponse(), timeoutPromise]);
+        for (const line of lines) {
+          if (/^\+\s*idling/i.test(line)) {
+            gotIdling = true;
+            break;
+          }
+        }
+      }
+
+      // 2. 等待 untagged 事件（* N EXISTS 表示有新邮件）
+      let newExists = null;
+      while (newExists === null) {
+        const lines = await Promise.race([this._waitResponse(), timeoutPromise]);
+        for (const line of lines) {
+          const m = line.match(/^\* (\d+) EXISTS/i);
+          if (m) {
+            newExists = parseInt(m[1], 10);
+            break;
+          }
+          // 也处理 RECENT（有些服务器用 RECENT 表示新邮件）
+          const m2 = line.match(/^\* (\d+) RECENT/i);
+          if (m2 && newExists === null) {
+            // RECENT 不直接表示总数，但说明有新邮件，用 0 标记"有变化"
+            newExists = 0;
+          }
+        }
+      }
+
+      // 3. 发送 DONE 退出 IDLE
+      this.socket.write('DONE\r\n', 'binary');
+
+      // 4. 等待 tagged 响应（A001 OK IDLE terminated）
+      const tagRegex = new RegExp(`^${tag}\\s+(OK|NO|BAD|BYE)`, 'i');
+      while (true) {
+        const lines = await Promise.race([this._waitResponse(), timeoutPromise]);
+        const endLine = lines.find((l) => tagRegex.test(l));
+        if (endLine) {
+          if (/^A\d+\s+(NO|BAD)/i.test(endLine)) {
+            throw new Error(`IDLE DONE failed: ${endLine}`);
+          }
+          break;
+        }
+      }
+
+      return newExists;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+  }
+
+  /** 检查 socket 是否仍然连接 */
+  isConnected() {
+    return this.socket && !this.socket.destroyed && this.connected;
   }
 
   /** LOGOUT 并关闭连接 */
