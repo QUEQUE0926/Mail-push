@@ -41,19 +41,19 @@ class ImapResponseParser {
     while (pos < buf.length) {
       // 查找行尾 \r\n
       const crlf = buf.indexOf('\r\n', pos);
-      if (crlf === -1) return null; // 数据不足
+      if (crlf === -1) break; // 数据不足，跳出循环，返回已解析的行
 
       let line = buf.slice(pos, crlf).toString('binary');
-      pos = crlf + 2;
+      const nextPos = crlf + 2;
 
       // 检测 literal：行末是否有 {N}
       const literalMatch = line.match(/\{(\d+)\}$/);
       if (literalMatch) {
         const octets = parseInt(literalMatch[1], 10);
         // 需要 octets 字节 + 后续 \r\n
-        if (pos + octets > buf.length) return null; // 数据不足
-        const literalData = buf.slice(pos, pos + octets).toString('binary');
-        pos += octets;
+        if (nextPos + octets > buf.length) break; // 数据不足，跳出
+        const literalData = buf.slice(nextPos, nextPos + octets).toString('binary');
+        pos = nextPos + octets;
         // literal 后通常跟 \r\n，但也可能直接接更多数据
         // 把 literal 附加到当前行
         line = line + literalData;
@@ -61,6 +61,8 @@ class ImapResponseParser {
         if (pos + 1 < buf.length && buf[pos] === 0x0d && buf[pos + 1] === 0x0a) {
           pos += 2;
         }
+      } else {
+        pos = nextPos;
       }
 
       lines.push(line);
@@ -73,7 +75,14 @@ class ImapResponseParser {
       }
     }
 
-    return null; // 还没收到结束标记
+    // 如果有完整的行，就返回（不需要等到 tagged 响应）
+    // 这修复了 greeting（* OK）无法被解析的问题
+    if (lines.length > 0) {
+      this.buffer = buf.slice(pos);
+      return { lines, done: false };
+    }
+
+    return null; // 还没有完整的行
   }
 }
 
