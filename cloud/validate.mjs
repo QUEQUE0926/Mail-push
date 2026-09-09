@@ -67,15 +67,9 @@ export function validatePayload(payload) {
     }
   }
 
-  // payload_version 必须 = 1
-  if (payload.payload_version !== 1) {
-    errors.push(`payload_version 必须为 1，当前: ${payload.payload_version}`);
-  }
-
-  // source 必须 = "qq-mail"
-  if (payload.source !== 'qq-mail') {
-    errors.push(`source 必须为 "qq-mail"，当前: ${payload.source}`);
-  }
+  // 注意：payload_version 和 source 不再校验
+  // 因为 GitHub client_payload 限制最多 10 个属性，这两个字段已从 buildPayload 移除
+  // source 始终是 "qq-mail"，version 硬编码为 1
 
   // priority 必须是 P0/P1/P2/P3
   if (!PRIORITIES.includes(payload.priority)) {

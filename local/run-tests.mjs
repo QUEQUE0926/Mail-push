@@ -904,9 +904,8 @@ await testAsync('buildPayload 严格禁止敏感字段', async () => {
   assert(!('htmlBody' in payload), 'no htmlBody field');
   assert(!('raw' in payload), 'no raw field');
 
-  assertEqual(payload.event_type, 'mail-push');
-  assertEqual(payload.source, 'qq-mail');
-  assertEqual(payload.payload_version, 1);
+  // 注意：event_type/source/payload_version 已从 buildPayload 移除
+  // 因为 GitHub client_payload 限制最多 10 个属性
   assert(payload.priority, 'should have priority');
   assert(payload.mail_type, 'should have mail_type');
   assert(payload.title, 'should have title');
