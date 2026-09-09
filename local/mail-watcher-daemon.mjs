@@ -129,8 +129,10 @@ async function processIncremental() {
   log(`mailbox_selected uidvalidity=${uidvalidity} exists=${exists}`);
 
   // 处理 pending dispatch（优先重试）
-  let pending = takePending(state);
-  while (pending) {
+  // takePending 返回整个 pending 数组，需要遍历处理
+  const pendingItems = takePending(state);
+  for (const pending of pendingItems) {
+    const midHash = pending.payload?.message_id_hash;
     log(`pending_retry mail_type=${pending.payload?.mail_type}`);
     const result = await sendDispatch(pending.payload, {
       token: process.env.GITHUB_TOKEN,
@@ -138,18 +140,17 @@ async function processIncremental() {
     });
     if (result.success) {
       log(`pending_retry success`);
-      removePending(state, pending);
+      removePending(state, midHash);
     } else {
       pending.retry_count = (pending.retry_count || 0) + 1;
       if (pending.retry_count >= 3) {
         log(`pending_retry gave_up after 3 attempts`);
-        removePending(state, pending);
+        removePending(state, midHash);
       } else {
         log(`pending_retry failed (attempt ${pending.retry_count}), will retry next round`);
-        break; // 留到下轮
+        // 不 break，继续处理其他 pending；失败的留在队列里下轮重试
       }
     }
-    pending = takePending(state);
   }
 
   // 搜索新邮件
