@@ -216,10 +216,8 @@ export function buildPayload(classification, mail, options = {}) {
     message_id_hash: hashMessageId(mail.messageId),
   };
 
-  // 如果是历史邮件，标记
-  if (options.historicalPush) {
-    payload.historical = true;
-  }
+  // 注意：不添加 historical 字段，因为 GitHub client_payload 限制最多10个属性
+  // 且云端 push.mjs 不使用这个字段
 
   // 安全检查：确保 payload 中不含敏感信息
   _sanitizePayload(payload);
