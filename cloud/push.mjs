@@ -151,6 +151,19 @@ function renderPushContent(payload) {
         ].filter(Boolean).join('\n'),
       };
 
+    case 'deadline_reminder':
+      return {
+        title: '【截止提醒】',
+        content: [
+          `《${game || '未知游戏'}》`,
+          platformStr ? `平台：${platformStr}` : '',
+          '',
+          summary || '',
+          `需要你：${action || '尽快处理'}`,
+          company ? `来源：${company}` : '',
+        ].filter(Boolean).join('\n'),
+      };
+
     case 'embargo_notice':
     case 'nda_notice': {
       const label = mail_type === 'embargo_notice' ? 'Embargo' : 'NDA';

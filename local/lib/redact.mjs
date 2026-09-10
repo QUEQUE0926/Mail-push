@@ -10,6 +10,15 @@
 
 import crypto from 'node:crypto';
 
+// ─── 工具函数 ────────────────────────────────────────────────────────
+
+/** 格式化日期为 MM-DD（如 09-20） */
+function formatDateShort(d) {
+  if (!d || !(d instanceof Date) || isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // ─── Code 正则模式 ──────────────────────────────────────────────────
 
 /**
@@ -143,6 +152,7 @@ const TYPE_TITLES = {
   'review_application_approved': '评测申请通过',
   'review_code_received': '评测码已到',
   'deadline_notice': '截止时间提醒',
+  'deadline_reminder': '截止提醒',
   'embargo_notice': 'Embargo 通知',
   'nda_notice': 'NDA 通知',
   'followup_request': '厂商跟进请求',
@@ -176,6 +186,31 @@ export function buildPayload(classification, mail, options = {}) {
   let summary = classification.summary || '';
   if (codeDetection.hasCode && type === 'review_code_received') {
     summary = '厂商已发送评测 Code。';
+  }
+
+  // 追加截止时间信息到 summary
+  const deadlines = classification.deadlines || {};
+  const deadlineParts = [];
+  if (deadlines.linkback_deadline) {
+    const d = new Date(deadlines.linkback_deadline);
+    if (!isNaN(d.getTime())) {
+      deadlineParts.push(`回链截止：${formatDateShort(d)}`);
+    }
+  }
+  if (deadlines.application_deadline) {
+    const d = new Date(deadlines.application_deadline);
+    if (!isNaN(d.getTime())) {
+      deadlineParts.push(`申请截止：${formatDateShort(d)}`);
+    }
+  }
+  if (deadlines.general_deadline && deadlineParts.length === 0) {
+    const d = new Date(deadlines.general_deadline);
+    if (!isNaN(d.getTime())) {
+      deadlineParts.push(`截止：${formatDateShort(d)}`);
+    }
+  }
+  if (deadlineParts.length > 0) {
+    summary = summary + (summary.endsWith('。') ? '' : '。') + deadlineParts.join('，') + '。';
   }
 
   // action：如果含 code，引导用户去原邮件查看

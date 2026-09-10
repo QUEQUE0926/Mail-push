@@ -12,6 +12,7 @@ export const MAIL_TYPES = Object.freeze([
   'review_application_approved',
   'review_code_received',
   'deadline_notice',
+  'deadline_reminder',
   'embargo_notice',
   'nda_notice',
   'followup_request',

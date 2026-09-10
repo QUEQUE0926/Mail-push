@@ -28,6 +28,12 @@ import {
   addProcessed, isProcessed,
 } from './lib/state.mjs';
 import { sendDispatch } from './lib/dispatch.mjs';
+import {
+  loadDeadlines, saveDeadlines,
+  addDeadlinesFromClassification,
+  checkDueDeadlines, markNotified,
+  buildDeadlineReminderPayload,
+} from './lib/deadlines.mjs';
 
 // ─── 路径配置 ───────────────────────────────────────────────────────
 
@@ -39,6 +45,7 @@ const CONFIG_DIR = path.join(PROJECT_ROOT, 'config');
 const STATE_DIR = path.join(PROJECT_ROOT, 'state');
 const LOG_DIR = path.join(PROJECT_ROOT, 'logs');
 const STATE_FILE = path.join(STATE_DIR, 'mail-state.json');
+const DEADLINES_FILE = path.join(STATE_DIR, 'deadlines.json');
 const LOCK_FILE = path.join(STATE_DIR, 'mail-watcher.lock');
 const WHITELIST_FILE = path.join(CONFIG_DIR, 'whitelist.json');
 const RULES_FILE = path.join(CONFIG_DIR, 'rules.json');
@@ -51,6 +58,7 @@ const MAILBOX_KEY = 'qq-main';
 
 let imapClient = null;
 let state = null;
+let deadlinesState = null;
 let whitelist = null;
 let rules = null;
 let running = true;
@@ -315,6 +323,13 @@ async function processIncremental() {
     if (result.success) {
       log(`uid=${uid} dispatch=success`);
       addProcessed(state, midHash);
+      // 记录截止时间（用于后续提醒）
+      if (classification.type === 'review_code_received' ||
+          classification.type === 'review_invitation' ||
+          classification.type === 'deadline_notice') {
+        addDeadlinesFromClassification(deadlinesState, classification, midHash);
+        saveDeadlines(deadlinesState, DEADLINES_FILE);
+      }
       if (uid > maxProcessedUid) maxProcessedUid = uid;
     } else {
       log(`uid=${uid} dispatch=failed error=${result.error?.slice(0, 100)}`);
@@ -333,6 +348,44 @@ async function processIncremental() {
 
   saveState(state, STATE_FILE);
   return uidsToProcess.length;
+}
+
+/**
+ * 检查即将到期的截止项，并发送推送提醒。
+ */
+async function checkAndSendDeadlineReminders() {
+  if (!deadlinesState) return;
+
+  const dueItems = checkDueDeadlines(deadlinesState);
+  if (dueItems.length === 0) {
+    saveDeadlines(deadlinesState, DEADLINES_FILE);
+    return;
+  }
+
+  log(`发现 ${dueItems.length} 个即将到期的截止项，发送提醒...`);
+
+  for (const item of dueItems) {
+    const payload = buildDeadlineReminderPayload(item);
+    log(`deadline_reminder game=${item.game} type=${item.deadline_type} days_until=${item.days_until}`);
+
+    const result = await sendDispatch(payload, {
+      token: process.env.GITHUB_TOKEN,
+      repo: process.env.GITHUB_REPO,
+    });
+
+    if (result.success) {
+      log(`deadline_reminder dispatch=success`);
+      markNotified(deadlinesState, item.message_id_hash, item.deadline_type);
+    } else {
+      log(`deadline_reminder dispatch=failed error=${result.error?.slice(0, 100)}`);
+      // 失败不标记，下轮重试
+    }
+
+    // 避免连续发送触发限流
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  saveDeadlines(deadlinesState, DEADLINES_FILE);
 }
 
 // ─── 连接管理 ───────────────────────────────────────────────────────
@@ -382,6 +435,9 @@ async function mainLoop() {
         log(`本轮处理完成，共 ${processed} 封新邮件`);
       }
 
+      // 检查截止时间提醒
+      await checkAndSendDeadlineReminders();
+
       if (!running) break;
 
       // 进入 IDLE 模式等待新邮件
@@ -418,6 +474,7 @@ async function shutdown() {
   // 保存状态
   try {
     if (state) saveState(state, STATE_FILE);
+    if (deadlinesState) saveDeadlines(deadlinesState, DEADLINES_FILE);
   } catch (_) {}
 
   // 释放锁
@@ -448,6 +505,8 @@ async function main() {
 
   // 加载状态
   state = loadState(STATE_FILE);
+  deadlinesState = loadDeadlines(DEADLINES_FILE);
+  log(`截止提醒: ${deadlinesState.items.length} 个待处理项`);
 
   // 获取单实例锁
   const lockAcquired = acquireLock(LOCK_FILE);

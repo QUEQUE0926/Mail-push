@@ -16,6 +16,7 @@ export const MAIL_TYPES = [
   'review_application_approved', // 评测申请通过
   'review_code_received',      // 评测码已到
   'deadline_notice',           // 截止时间通知
+  'deadline_reminder',         // 截止提醒（系统自动发送）
   'embargo_notice',            // 解禁/embargo 通知
   'nda_notice',                // NDA 通知
   'followup_request',          // 跟进请求
@@ -30,6 +31,7 @@ export const MAIL_TYPES = [
 
 export const PRIORITY_MAP = {
   'deadline_notice': 'P0',
+  'deadline_reminder': 'P1',
   'review_code_received': 'P1',
   'embargo_notice': 'P1',
   'review_invitation': 'P2',
@@ -175,6 +177,164 @@ function detectUrgentDeadline(body) {
   return false;
 }
 
+// ─── 截止时间提取 ────────────────────────────────────────────────────
+
+/**
+ * 从文本中提取日期。
+ * 支持格式：
+ *   - 2026年9月20日 / 2026年09月20日
+ *   - 9月20日 / 09月20日（默认当前年）
+ *   - 2026/9/20 / 2026-09-20 / 2026.09.20
+ *   - September 20, 2026 / Sep 20, 2026
+ *   - 20 Sep 2026 / 20 September 2026
+ * @returns {Date|null}
+ */
+function extractDate(text) {
+  if (!text) return null;
+  const now = new Date();
+  const year = now.getFullYear();
+
+  // 2026年9月20日
+  let m = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+
+  // 9月20日（默认当前年）
+  m = text.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (m) {
+    const d = new Date(year, parseInt(m[1]) - 1, parseInt(m[2]));
+    // 如果日期已经过去，可能是明年
+    if (d < now && d.getMonth() < now.getMonth() - 1) d.setFullYear(year + 1);
+    return d;
+  }
+
+  // 2026/9/20 或 2026-09-20 或 2026.09.20
+  m = text.match(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+
+  // September 20, 2026
+  const months = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+  m = text.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2}),?\s*(\d{4})?/i);
+  if (m) {
+    const mon = months[m[1].toLowerCase().slice(0,3)];
+    const y = m[3] ? parseInt(m[3]) : year;
+    return new Date(y, mon - 1, parseInt(m[2]));
+  }
+
+  // 20 Sep 2026
+  m = text.match(/(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{4})?/i);
+  if (m) {
+    const mon = months[m[2].toLowerCase().slice(0,3)];
+    const y = m[3] ? parseInt(m[3]) : year;
+    return new Date(y, mon - 1, parseInt(m[1]));
+  }
+
+  return null;
+}
+
+/**
+ * 从邮件正文中提取各类截止时间。
+ * @param {string} subject
+ * @param {string} body
+ * @returns {{application_deadline: Date|null, linkback_deadline: Date|null, general_deadline: Date|null}}
+ */
+export function extractDeadlines(subject, body) {
+  const text = (subject || '') + '\n' + (body || '');
+  const result = {
+    application_deadline: null,
+    linkback_deadline: null,
+    general_deadline: null,
+  };
+
+  // 回链截止关键词（优先级最高，因为最具体）
+  const linkbackPatterns = [
+    /(回链|回鏈|link\s*back|linkback).{0,30}(截止|締切|deadline|时间|時間|date|期限)/i,
+    /(截止|締切|deadline|时间|時間|date|期限).{0,30}(回链|回鏈|link\s*back|linkback)/i,
+    /(请在|請在|please).{0,30}(回链|回鏈|link\s*back)/i,
+    /(回链|回鏈|link\s*back).{0,30}(前|之前|before|by)/i,
+  ];
+
+  // 申请截止关键词
+  const applicationPatterns = [
+    /(申请|申請|application).{0,30}(截止|締切|deadline|时间|時間|date|期限)/i,
+    /(截止|締切|deadline|时间|時間|date|期限).{0,30}(申请|申請|application)/i,
+    /(请在|請在|please).{0,30}(申请|申請|apply|application)/i,
+  ];
+
+  // 通用截止关键词
+  const generalPatterns = [
+    /(截止|締切|deadline|期限|due).{0,50}/i,
+    /.{0,20}(截止|締切|deadline|期限|due)/i,
+  ];
+
+  // 提取回链截止
+  for (const re of linkbackPatterns) {
+    const match = text.match(re);
+    if (match) {
+      const context = match[0];
+      const date = extractDate(context);
+      if (date) {
+        result.linkback_deadline = date;
+        break;
+      }
+    }
+  }
+
+  // 如果回链模式没找到日期，在更大范围内搜索
+  if (!result.linkback_deadline) {
+    for (const re of linkbackPatterns) {
+      const match = text.match(re);
+      if (match) {
+        const idx = match.index || 0;
+        const context = text.slice(Math.max(0, idx - 50), idx + 100);
+        const date = extractDate(context);
+        if (date) {
+          result.linkback_deadline = date;
+          break;
+        }
+      }
+    }
+  }
+
+  // 提取申请截止
+  for (const re of applicationPatterns) {
+    const match = text.match(re);
+    if (match) {
+      const idx = match.index || 0;
+      const context = text.slice(Math.max(0, idx - 50), idx + 100);
+      const date = extractDate(context);
+      if (date) {
+        result.application_deadline = date;
+        break;
+      }
+    }
+  }
+
+  // 提取通用截止（仅当没有更具体的截止时间时）
+  if (!result.application_deadline && !result.linkback_deadline) {
+    for (const re of generalPatterns) {
+      const match = text.match(re);
+      if (match) {
+        const idx = match.index || 0;
+        const context = text.slice(Math.max(0, idx - 30), idx + 80);
+        const date = extractDate(context);
+        if (date) {
+          result.general_deadline = date;
+          break;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/** 格式化日期为 YYYY-MM-DD */
+function formatDate(d) {
+  if (!d || !(d instanceof Date) || isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // ─── 规则分类器 ─────────────────────────────────────────────────────
 
 /**
@@ -189,6 +349,9 @@ export function classifyByRules(header, body, config = {}) {
   const textBody = body.textBody || '';
   const combined = subject + '\n' + textBody;
   const selfEmail = normalizeEmail(config.selfEmail || '');
+
+  // 提取截止时间（所有分类共用）
+  const deadlines = extractDeadlines(subject, textBody);
 
   // 规则0：自己发的邮件 → irrelevant
   if (selfEmail && header.from && normalizeEmail(header.from.email) === selfEmail) {
@@ -353,6 +516,7 @@ function _buildResult(type, overrides = {}) {
     summary: overrides.summary || '',
     action: overrides.action || '',
     deadline: overrides.deadline || null,
+    deadlines: overrides.deadlines || { application_deadline: null, linkback_deadline: null, general_deadline: null },
   };
 }
 
@@ -480,6 +644,9 @@ Subject: ${subject}
  * @returns {Promise<object>}
  */
 export async function classify(header, body, config = {}) {
+  // 提取截止时间（所有分类共用）
+  const deadlines = extractDeadlines(header.subject || '', body.textBody || '');
+
   // 1. 规则分类
   const ruleResult = classifyByRules(header, body, config);
   if (ruleResult) {
@@ -487,6 +654,8 @@ export async function classify(header, body, config = {}) {
     if (!ruleResult.company && header.from) {
       ruleResult.company = extractCompany(header.from);
     }
+    // 补充 deadlines
+    ruleResult.deadlines = deadlines;
     ruleResult.classifier = 'rules';
     return ruleResult;
   }
@@ -497,6 +666,8 @@ export async function classify(header, body, config = {}) {
   if (!llmResult.company && header.from) {
     llmResult.company = extractCompany(header.from);
   }
+  // 补充 deadlines
+  llmResult.deadlines = deadlines;
   llmResult.classifier = llmResult.llm_used ? 'llm' : 'rules_fallback';
   return llmResult;
 }
