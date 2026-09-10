@@ -70,10 +70,42 @@ const BODY_KEYWORDS = [
 ];
 
 // Code 相关关键词（触发 review_code_received）
+// 注意：这些关键词应该匹配"发送Code"的语境，而不是"申请Code"的语境
 const CODE_KEYWORDS = [
   'steam key', 'switch code', 'ps code', 'xbox code',
   'review code', 'activation code', '评测码', '評測碼',
   'シリアルコード', 'activation key', 'download code',
+  'code這邊提供', 'code这边提供', 'code請參考', 'code请参考',
+  '提供steam key', '提供switch code', '提供ps code', '提供xbox code',
+];
+
+// 评测邀请/申请通知关键词（触发 review_invitation）
+const INVITATION_KEYWORDS = [
+  '公關片申請', '公关片申请', '公開片申請', '公开片申请',
+  '若有興趣進行評測', '若有兴趣进行评测',
+  '若有興趣評測', '若有兴趣评测',
+  '開放申請', '开放申请', '開放公關片', '开放公关片',
+  '申請code下載序號', '申请code下载序号',
+  '透過郵件申請code', '通过邮件申请code',
+];
+
+// 跟进/催回链关键词（触发 followup_request）
+const FOLLOWUP_KEYWORDS = [
+  '還沒收到您的反饋連結', '还没收到您的反馈链接',
+  '還沒收到反饋', '还没收到反馈',
+  '請在期限內反饋', '请在期限内反馈',
+  '請在期限內回覆', '请在期限内回复',
+  '不曉得是我這邊漏信', '不晓得是我这边漏信',
+  '再麻煩確認', '再麻烦确认',
+  '為了不影響之後申請', '为了不影响之后申请',
+];
+
+// 申请截止/停止申请关键词
+const APPLICATION_CLOSED_KEYWORDS = [
+  '已經停止申請', '已经停止申请',
+  '截止日是昨晚', '截止日是昨天',
+  '停止申請了', '停止申请了',
+  '申請已截止', '申请已截止',
 ];
 
 // Newsletter / 促销关键词
@@ -207,6 +239,22 @@ function extractDate(text) {
     return d;
   }
 
+  // 6/4 或 6/4(四) 或 8/31(一) 月/日格式（默认当前年）
+  // 注意：只匹配 1-12 月和 1-31 日，避免匹配到其他数字
+  m = text.match(/(?<!\d)(\d{1,2})\/(\d{1,2})(?!\d)/);
+  if (m) {
+    const month = parseInt(m[1]);
+    const day = parseInt(m[2]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const d = new Date(year, month - 1, day);
+      // 如果日期已经过去超过1个月，可能是明年
+      if (d < now && (now.getMonth() - d.getMonth() > 1 || (now.getMonth() < d.getMonth()))) {
+        d.setFullYear(year + 1);
+      }
+      return d;
+    }
+  }
+
   // 2026/9/20 或 2026-09-20 或 2026.09.20
   m = text.match(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
   if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
@@ -235,15 +283,44 @@ function extractDate(text) {
  * 从邮件正文中提取各类截止时间。
  * @param {string} subject
  * @param {string} body
+ * @param {Date} [referenceDate] - 邮件发送日期，用于计算相对时间（如"1個月內"）
  * @returns {{application_deadline: Date|null, linkback_deadline: Date|null, general_deadline: Date|null}}
  */
-export function extractDeadlines(subject, body) {
+export function extractDeadlines(subject, body, referenceDate = null) {
   const text = (subject || '') + '\n' + (body || '');
+  const refDate = referenceDate || new Date();
   const result = {
     application_deadline: null,
     linkback_deadline: null,
     general_deadline: null,
   };
+
+  // 相对时间计算：如"1個月內"、"1个月内"
+  function calculateRelativeDeadline(relativeText) {
+    // 匹配 "X個月內" / "X个月内" / "X周內" / "X天內"
+    const monthMatch = relativeText.match(/(\d+)\s*(個月|个月)\s*(內|内)/);
+    if (monthMatch) {
+      const months = parseInt(monthMatch[1]);
+      const d = new Date(refDate);
+      d.setMonth(d.getMonth() + months);
+      return d;
+    }
+    const weekMatch = relativeText.match(/(\d+)\s*(週|周)\s*(內|内)/);
+    if (weekMatch) {
+      const weeks = parseInt(weekMatch[1]);
+      const d = new Date(refDate);
+      d.setDate(d.getDate() + weeks * 7);
+      return d;
+    }
+    const dayMatch = relativeText.match(/(\d+)\s*(日|天)\s*(內|内)/);
+    if (dayMatch) {
+      const days = parseInt(dayMatch[1]);
+      const d = new Date(refDate);
+      d.setDate(d.getDate() + days);
+      return d;
+    }
+    return null;
+  }
 
   // 回链截止关键词（优先级最高，因为最具体）
   const linkbackPatterns = [
@@ -254,10 +331,15 @@ export function extractDeadlines(subject, body) {
   ];
 
   // 申请截止关键词
+  // 注意：真实邮件里常见格式是"並於6/4(四)下班前回覆"，没有"申请截止"关键词
+  // 所以需要匹配"並於/请在 + 日期 + 前回覆/前回复"这种模式
   const applicationPatterns = [
     /(申请|申請|application).{0,30}(截止|締切|deadline|时间|時間|date|期限)/i,
     /(截止|締切|deadline|时间|時間|date|期限).{0,30}(申请|申請|application)/i,
     /(请在|請在|please).{0,30}(申请|申請|apply|application)/i,
+    // 新增：並於/请在 + 日期 + 前回覆/前回复（评测邀请邮件中的申请截止）
+    /(並於|并于|请於|请于|請於|請于|please).{0,20}(\d{1,2}[\/\-]\d{1,2}).{0,20}(前回覆|前回复|前回覆|前回復|前申請|前申请)/i,
+    /(\d{1,2}[\/\-]\d{1,2}).{0,10}(前回覆|前回复|前回覆|前回復)/i,
   ];
 
   // 通用截止关键词
@@ -276,6 +358,12 @@ export function extractDeadlines(subject, body) {
         result.linkback_deadline = date;
         break;
       }
+      // 尝试相对时间
+      const relativeDate = calculateRelativeDeadline(context);
+      if (relativeDate) {
+        result.linkback_deadline = relativeDate;
+        break;
+      }
     }
   }
 
@@ -291,6 +379,30 @@ export function extractDeadlines(subject, body) {
           result.linkback_deadline = date;
           break;
         }
+        // 尝试相对时间
+        const relativeDate = calculateRelativeDeadline(context);
+        if (relativeDate) {
+          result.linkback_deadline = relativeDate;
+          break;
+        }
+      }
+    }
+  }
+
+  // 专门检测"請於X個月內回覆報導評測連結"这种常见模式
+  if (!result.linkback_deadline) {
+    const linkbackRelativePatterns = [
+      /(請|请).{0,10}(\d+)\s*(個月|个月)\s*(內|内).{0,20}(回覆|回复|回链|回鏈|反饋|反馈)/,
+      /(\d+)\s*(個月|个月)\s*(內|内).{0,20}(回覆|回复|回链|回鏈|反饋|反馈)/,
+    ];
+    for (const re of linkbackRelativePatterns) {
+      const match = text.match(re);
+      if (match) {
+        const relativeDate = calculateRelativeDeadline(match[0]);
+        if (relativeDate) {
+          result.linkback_deadline = relativeDate;
+          break;
+        }
       }
     }
   }
@@ -300,8 +412,13 @@ export function extractDeadlines(subject, body) {
     const match = text.match(re);
     if (match) {
       const idx = match.index || 0;
-      const context = text.slice(Math.max(0, idx - 50), idx + 100);
-      const date = extractDate(context);
+      const context = text.slice(Math.max(0, idx - 20), idx + 80);
+      // 先尝试从匹配的文本中提取日期
+      let date = extractDate(match[0]);
+      // 如果没提取到，再从上下文中提取
+      if (!date) {
+        date = extractDate(context);
+      }
       if (date) {
         result.application_deadline = date;
         break;
@@ -379,15 +496,45 @@ export function classifyByRules(header, body, config = {}) {
     }
   }
 
-  // 规则2：正文含 Code 关键词 → review_code_received, P1
-  if (hasKeyword(textBody, CODE_KEYWORDS)) {
-    return _buildResult('review_code_received', {
+  // 规则2：跟进/催回链邮件（优先于 Code 检测，因为催回链邮件里可能也有"code"关键词）
+  if (hasKeyword(textBody, FOLLOWUP_KEYWORDS)) {
+    return _buildResult('followup_request', {
       confidence: 0.9,
-      summary: '厂商已发送评测 Code。',
-      action: '打开原邮件查看 Code。',
+      summary: '厂商催回链/跟进，请尽快反馈评测链接。',
+      action: '尽快发布评测并回链，或回复厂商说明情况。',
       game: extractGame(subject),
       platform: extractPlatform(subject, textBody),
     });
+  }
+
+  // 规则3：申请截止/停止申请通知
+  if (hasKeyword(textBody, APPLICATION_CLOSED_KEYWORDS)) {
+    return _buildResult('review_application_notice', {
+      confidence: 0.85,
+      summary: '评测申请已截止/停止申请。',
+      action: '下次请尽早申请，关注厂商后续游戏。',
+      game: extractGame(subject),
+      platform: extractPlatform(subject, textBody),
+    });
+  }
+
+  // 规则4：正文含 Code 关键词 → review_code_received, P1
+  // 注意：只在"发送Code"的语境下触发，排除"申请Code"的语境
+  if (hasKeyword(textBody, CODE_KEYWORDS)) {
+    // 排除"申请code下载序号"这种邀请语境
+    const isInvitationContext = lower(textBody).includes('申請code下載序號') ||
+      lower(textBody).includes('申请code下载序号') ||
+      lower(textBody).includes('透過郵件申請code') ||
+      lower(textBody).includes('通过邮件申请code');
+    if (!isInvitationContext) {
+      return _buildResult('review_code_received', {
+        confidence: 0.9,
+        summary: '厂商已发送评测 Code。',
+        action: '打开原邮件查看 Code。',
+        game: extractGame(subject),
+        platform: extractPlatform(subject, textBody),
+      });
+    }
   }
 
   // 规则3：截止时间 < 24h → deadline_notice, P0
@@ -448,15 +595,16 @@ export function classifyByRules(header, body, config = {}) {
     });
   }
 
-  // 规则6：评测邀请（Subject 含 鉴赏家/鑑賞家/评测邀请/review invitation 等）
+  // 规则6：评测邀请（Subject 或正文含 公關片申請/若有興趣進行評測等）
   const invitationKeywords = ['鉴赏家', '鑑賞家', '评测邀请', '評測邀請', 'review invitation', '公開片', '邀请评测', '邀請評測'];
   if (hasKeyword(subject, invitationKeywords) ||
+    hasKeyword(textBody, INVITATION_KEYWORDS) ||
     (lower(subject).includes('review') && lower(subject).includes('邀请')) ||
     (lower(subject).includes('review') && lower(subject).includes('invitation'))) {
     return _buildResult('review_invitation', {
-      confidence: 0.8,
-      summary: '收到评测邀请。',
-      action: '评估是否接受评测邀请并回复厂商。',
+      confidence: 0.85,
+      summary: '收到评测邀请/公关片申请。',
+      action: '评估是否接受评测邀请，在申请截止前回复厂商。',
       game: extractGame(subject),
       platform: extractPlatform(subject, textBody),
     });
@@ -645,7 +793,9 @@ Subject: ${subject}
  */
 export async function classify(header, body, config = {}) {
   // 提取截止时间（所有分类共用）
-  const deadlines = extractDeadlines(header.subject || '', body.textBody || '');
+  // 传入邮件发送日期，用于计算相对时间（如"1個月內"）
+  const referenceDate = header.date instanceof Date ? header.date : new Date();
+  const deadlines = extractDeadlines(header.subject || '', body.textBody || '', referenceDate);
 
   // 1. 规则分类
   const ruleResult = classifyByRules(header, body, config);
