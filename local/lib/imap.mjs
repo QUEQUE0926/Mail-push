@@ -345,12 +345,13 @@ export class ImapClient {
           rawHeaders: '',
         };
         // 检查本行是否包含 header literal
-        const headerMatch = line.match(/BODY\.PEEK\[HEADER\.FIELDS[^\]]*\]\s*\{(\d+)\}/i);
+        // 同时匹配 BODY.PEEK[HEADER.FIELDS] 和 BODY[HEADER.FIELDS]（QQ邮箱返回后者）
+        const headerMatch = line.match(/BODY(?:\.PEEK)?\[HEADER\.FIELDS[^\]]*\]\s*\{(\d+)\}/i);
         if (headerMatch) {
           const idx = line.indexOf('{' + headerMatch[1] + '}') + headerMatch[1].length + 2;
           current.rawHeaders = line.slice(idx);
         } else {
-          const headerMatch2 = line.match(/BODY\.PEEK\[HEADER\.FIELDS[^\]]*\]\{(\d+)\}/i);
+          const headerMatch2 = line.match(/BODY(?:\.PEEK)?\[HEADER\.FIELDS[^\]]*\]\{(\d+)\}/i);
           if (headerMatch2) {
             const idx = line.indexOf('{' + headerMatch2[1] + '}') + headerMatch2[1].length + 2;
             current.rawHeaders = line.slice(idx);
